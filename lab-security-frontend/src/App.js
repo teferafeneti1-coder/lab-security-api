@@ -19,7 +19,7 @@ function App() {
 
   // 🔌 WebSocket connection
   useEffect(() => {
-    ws.current = new WebSocket("wss://lab-security-api-1.onrender.com/wss");
+    ws.current = new WebSocket("wss://lab-security-api-1.onrender.com/ws");
 
     ws.current.onopen = () => {
       console.log("✅ WebSocket connected");

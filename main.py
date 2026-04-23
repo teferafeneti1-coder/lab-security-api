@@ -1,3 +1,6 @@
+@app.get("/")
+def home():
+    return {"message": "API is running"}
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
