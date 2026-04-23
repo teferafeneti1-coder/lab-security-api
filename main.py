@@ -1,7 +1,4 @@
-@app.get("/")
-def home():
-    return {"message": "API is running"}
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 import cv2
@@ -11,6 +8,7 @@ import time
 
 app = FastAPI()
 
+# ✅ CORS (important for frontend)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -19,6 +17,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ✅ Root route (fixes Render "Not Found")
+@app.get("/")
+def home():
+    return {"message": "Lab Security API is running 🚀"}
+
+# ✅ Load model ONCE
 model = YOLO("yolov8n.pt")
 
 LAB_EQUIPMENT = {"monitor", "mouse", "keyboard", "desktop", "tv"}
@@ -29,66 +33,85 @@ equipment_last_seen = {}
 last_person_time = 0
 prohibited_start_time = None
 
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     global equipment_last_seen, last_person_time, prohibited_start_time
 
     await websocket.accept()
+    print("✅ WebSocket connected")
 
-    while True:
-        data = await websocket.receive_text()
+    try:
+        while True:
+            data = await websocket.receive_text()
 
-        # Decode base64 image
-        img_data = base64.b64decode(data.split(",")[1])
-        np_arr = np.frombuffer(img_data, np.uint8)
-        frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            try:
+                # Decode base64 image
+                img_data = base64.b64decode(data.split(",")[1])
+                np_arr = np.frombuffer(img_data, np.uint8)
+                frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        results = model(frame, conf=0.3, verbose=False)
+                if frame is None:
+                    continue
 
-        current_time = time.time()
+                results = model(frame, conf=0.2, verbose=False)
 
-        detections = []
-        boxes = []
-        person_present = False
-        prohibited_present = False
+                current_time = time.time()
 
-        for r in results:
-            for box in r.boxes:
-                cls_name = r.names[int(box.cls)].lower()
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
+                detections = []
+                boxes = []
+                person_present = False
+                prohibited_present = False
 
-                detections.append(cls_name)
-                boxes.append({
-                    "label": cls_name,
-                    "box": [x1, y1, x2, y2]
+                for r in results:
+                    for box in r.boxes:
+                        cls_name = r.names[int(box.cls)].lower()
+                        x1, y1, x2, y2 = map(int, box.xyxy[0])
+
+                        detections.append(cls_name)
+                        boxes.append({
+                            "label": cls_name,
+                            "box": [x1, y1, x2, y2]
+                        })
+
+                        if cls_name == "person":
+                            person_present = True
+                            last_person_time = current_time
+
+                        if cls_name in LAB_EQUIPMENT:
+                            equipment_last_seen[cls_name] = current_time
+
+                        if cls_name in PROHIBITED_ITEMS:
+                            prohibited_present = True
+
+                # 🚨 THEFT DETECTION (safe)
+                theft_alert = False
+                if equipment_last_seen:
+                    for item, t in equipment_last_seen.items():
+                        if current_time - t > 5:
+                            theft_alert = True
+                            break
+
+                # 🚨 ABANDONED ITEM DETECTION
+                abandoned_alert = False
+                if prohibited_present and not person_present:
+                    if prohibited_start_time is None:
+                        prohibited_start_time = current_time
+                    elif current_time - prohibited_start_time > 5:
+                        abandoned_alert = True
+                else:
+                    prohibited_start_time = None
+
+                await websocket.send_json({
+                    "detections": detections,
+                    "boxes": boxes,
+                    "theft_alert": theft_alert,
+                    "abandoned_alert": abandoned_alert
                 })
 
-                if cls_name == "person":
-                    person_present = True
-                    last_person_time = current_time
+            except Exception as e:
+                print("⚠️ Frame processing error:", e)
+                continue
 
-                if cls_name in LAB_EQUIPMENT:
-                    equipment_last_seen[cls_name] = current_time
-
-                if cls_name in PROHIBITED_ITEMS:
-                    prohibited_present = True
-
-        # 🚨 Theft
-        theft_alert = any(current_time - t > 5 for t in equipment_last_seen.values())
-
-        # 🚨 Abandoned
-        abandoned_alert = False
-        if prohibited_present and not person_present:
-            if prohibited_start_time is None:
-                prohibited_start_time = current_time
-            elif current_time - prohibited_start_time > 5:
-                abandoned_alert = True
-        else:
-            prohibited_start_time = None
-
-        await websocket.send_json({
-            "detections": detections,
-            "boxes": boxes,
-            "theft_alert": theft_alert,
-            "abandoned_alert": abandoned_alert
-        })
+    except WebSocketDisconnect:
+        print("❌ WebSocket disconnected")
