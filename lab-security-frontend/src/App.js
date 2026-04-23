@@ -1,59 +1,83 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import Webcam from "react-webcam";
 
 function App() {
   const webcamRef = useRef(null);
   const [result, setResult] = useState(null);
+  const ws = useRef(null);
 
- const captureAndSend = async () => {
-  console.log("Button clicked");
+  const playAlarm = () => {
+    const audio = new Audio("/alarm.mp3");
+    audio.play();
+  };
 
-  const imageSrc = webcamRef.current.getScreenshot();
-  console.log("Image captured:", imageSrc);
+  useEffect(() => {
+    ws.current = new WebSocket("wss://lab-security-api-1.onrender.com/ws");
 
-  const blob = await fetch(imageSrc).then(res => res.blob());
+    ws.current.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      setResult(data);
 
-  const formData = new FormData();
-  formData.append("file", blob, "image.jpg");
+      if (data.theft_alert || data.abandoned_alert) {
+        playAlarm();
+      }
+    };
 
-  try {
-    const response = await fetch("https://lab-security-api-1.onrender.com/detect", {
-      method: "POST",
-      body: formData,
-    });
+    return () => ws.current.close();
+  }, []);
 
-    console.log("Response status:", response.status);
+  // Send frames continuously
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (ws.current && ws.current.readyState === 1) {
+        const imageSrc = webcamRef.current?.getScreenshot();
+        if (imageSrc) {
+          ws.current.send(imageSrc);
+        }
+      }
+    }, 500); // ⚡ faster than before
 
-    const data = await response.json();
-    console.log("Response data:", data);
-
-    setResult(data);
-  } catch (error) {
-    console.error("Error:", error);
-  }
-};
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <div style={{ textAlign: "center" }}>
-      <h1>Lab Security System</h1>
+      <h1>⚡ Real-Time Lab Security System</h1>
 
-      <Webcam
-        ref={webcamRef}
-        screenshotFormat="image/jpeg"
-        width={400}
-      />
+      <div style={{ position: "relative", width: 640, margin: "auto" }}>
+        <Webcam ref={webcamRef} screenshotFormat="image/jpeg" width={640} />
 
-      <br /><br />
+        {/* Draw boxes */}
+        {result?.boxes?.map((det, index) => {
+          const [x1, y1, x2, y2] = det.box;
 
-      <button onClick={captureAndSend}>
-        Detect
-      </button>
+          return (
+            <div
+              key={index}
+              style={{
+                position: "absolute",
+                border: "3px solid red",
+                left: x1,
+                top: y1,
+                width: x2 - x1,
+                height: y2 - y1,
+                color: "red",
+                fontWeight: "bold"
+              }}
+            >
+              {det.label}
+            </div>
+          );
+        })}
+      </div>
 
-      {result && (
-        <div>
-          <h2>Result:</h2>
-          <pre>{JSON.stringify(result, null, 2)}</pre>
-        </div>
+      {/* Alerts */}
+      {result?.theft_alert && (
+        <h2 style={{ color: "red" }}>🚨 EQUIPMENT REMOVED!</h2>
+      )}
+
+      {result?.abandoned_alert && (
+        <h2 style={{ color: "orange" }}>🚨 ABANDONED ITEM!</h2>
       )}
     </div>
   );
