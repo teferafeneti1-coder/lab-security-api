@@ -5,22 +5,33 @@ function App() {
   const webcamRef = useRef(null);
   const [result, setResult] = useState(null);
 
-  const captureAndSend = async () => {
-    const imageSrc = webcamRef.current.getScreenshot();
+ const captureAndSend = async () => {
+  console.log("Button clicked");
 
-    const blob = await fetch(imageSrc).then(res => res.blob());
+  const imageSrc = webcamRef.current.getScreenshot();
+  console.log("Image captured:", imageSrc);
 
-    const formData = new FormData();
-    formData.append("file", blob, "image.jpg");
+  const blob = await fetch(imageSrc).then(res => res.blob());
 
+  const formData = new FormData();
+  formData.append("file", blob, "image.jpg");
+
+  try {
     const response = await fetch("https://lab-security-api-1.onrender.com/detect", {
       method: "POST",
       body: formData,
     });
 
+    console.log("Response status:", response.status);
+
     const data = await response.json();
+    console.log("Response data:", data);
+
     setResult(data);
-  };
+  } catch (error) {
+    console.error("Error:", error);
+  }
+};
 
   return (
     <div style={{ textAlign: "center" }}>

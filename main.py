@@ -1,14 +1,28 @@
 from fastapi import FastAPI, File, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 import numpy as np
 import cv2
 from ultralytics import YOLO
 
 app = FastAPI()
 
+# ✅ ADD THIS RIGHT AFTER app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # allow all for now
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 model = YOLO("yolov8n.pt")
 
 LAB_EQUIPMENT = {"monitor", "mouse", "keyboard", "desktop", "tv"}
 PROHIBITED_ITEMS = {"backpack", "handbag", "cell phone", "laptop", "bag"}
+
+@app.get("/")
+def home():
+    return {"message": "API is running"}
 
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
