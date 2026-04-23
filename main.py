@@ -17,7 +17,7 @@ async def detect(file: UploadFile = File(...)):
     np_arr = np.frombuffer(contents, np.uint8)
     frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-    results = model(frame, conf=0.3, verbose=False)
+    results = model(frame, conf=0.15, verbose=False)
 
     detections = []
 
