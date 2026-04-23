@@ -4,5 +4,5 @@ opencv-python-headless
 ultralytics
 pillow
 numpy
-python-multipartgit init
+python-multipart
 torch
